@@ -1,0 +1,352 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create Okta IDP and default roles on all accounts.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Okta SAML IDP"
+        Parameters:
+          - OktaMetadataUrl
+      -
+        Label:
+          default: "Roles"
+        Parameters:
+          - EnableAdminRole
+          - AdminRoleName
+          - EnablePowerUserRole
+          - PowerUserRoleName
+          - EnableReadOnlyRole
+          - ReadOnlyRoleName
+
+Mappings: 
+  OktaMapping: 
+    IDPName: 
+      Name: OktaIDP
+    RoleName:
+      Name: Okta-Idp-cross-account-role
+
+Parameters:
+  OktaMetadataUrl:
+    Type: String
+    Description: Publicly accessible HTTPS location where SAML metadata.xml can be downloaded.
+  IdentityAccount:
+    Type: String
+    Description: Account that will have the Okta user with access key and secret key with List Roles policy.
+  AdminRoleName:
+    Type: String
+    Description: Role name for administrator access.
+    Default: AdministratorAccessRole
+  PowerUserRoleName:
+    Type: String
+    Description: Role name for administaror but IAM access.
+    Default: PowerUserAccessRole
+  ReadOnlyRoleName:
+    Type: String
+    Description: Role name for read-only access.
+    Default: ReadOnlyAccessRole
+  EnableAdminRole:
+    Type: String
+    Default: 'true'
+    Description: Create an administrative role.
+    AllowedValues:
+      - 'true'
+      - 'false'
+  EnablePowerUserRole:
+    Type: String
+    Default: 'true'
+    Description: Create an administrative but IAM role.
+    AllowedValues:
+      - 'true'
+      - 'false'
+  EnableReadOnlyRole:
+    Type: String
+    Default: 'true'
+    Description: Create a read-only role.
+    AllowedValues:
+      - 'true'
+      - 'false'
+
+Conditions:
+  CreateAdminRole: !Equals
+    - !Ref EnableAdminRole
+    - 'true'
+  CreatePowerUserRole: !Equals
+    - !Ref EnablePowerUserRole
+    - 'true'
+  CreateReadOnlyRole: !Equals
+    - !Ref EnableReadOnlyRole
+    - 'true'
+  CreateOktaUser: !Equals
+    - !Ref IdentityAccount
+    - !Sub ${AWS::AccountId}
+
+Resources:
+  AdminRole:
+    Type: AWS::IAM::Role
+    Condition: CreateAdminRole
+    Properties:
+      RoleName: !Ref AdminRoleName
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated:
+                - !GetAtt SAMLIdp.SAMLProviderArn
+            Action:
+              - sts:AssumeRoleWithSAML
+            Condition:
+              StringEquals:
+                'SAML:aud':
+                  'https://signin.aws.amazon.com/saml'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+  PowerUserRole:
+    Type: AWS::IAM::Role
+    Condition: CreatePowerUserRole
+    Properties:
+      RoleName: !Ref PowerUserRoleName
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated:
+                - !GetAtt SAMLIdp.SAMLProviderArn
+            Action:
+              - sts:AssumeRoleWithSAML
+            Condition:
+              StringEquals:
+                'SAML:aud':
+                  'https://signin.aws.amazon.com/saml'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess
+  ReadOnlyRole:
+    Type: AWS::IAM::Role
+    Condition: CreateReadOnlyRole
+    Properties:
+      RoleName: !Ref ReadOnlyRoleName
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated:
+                - !GetAtt SAMLIdp.SAMLProviderArn
+            Action:
+              - sts:AssumeRoleWithSAML
+            Condition:
+              StringEquals:
+                'SAML:aud':
+                  'https://signin.aws.amazon.com/saml'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ReadOnlyAccess
+
+  OktaListRolesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !FindInMap [OktaMapping, "RoleName", "Name"]
+      Policies:
+        - PolicyName: listroles
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:ListRoles
+                  - iam:ListAccountAliases
+                Resource: '*'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Join
+                - ''
+                - - 'arn:aws:iam::'
+                  - !Ref IdentityAccount
+                  - ':root'
+            Action:
+              - sts:AssumeRole
+      Path: /
+
+  SAMLIdpLambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: '/'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: createupdate
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'iam:CreateSAMLProvider'
+                  - 'iam:UpdateSAMLProvider'
+                  - 'iam:DeleteSAMLProvider'
+                Resource: !Join
+                  - ''
+                  - - 'arn:aws:iam::*:saml-provider/'
+                    - !FindInMap [OktaMapping, "IDPName", "Name"]
+        - PolicyName: list
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'iam:ListSAMLProviders'
+                Resource: '*'
+
+  SAMLIdpLambda: 
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.handler"
+      Role: 
+        Fn::GetAtt: 
+          - "SAMLIdpLambdaRole"
+          - "Arn"
+      Code: 
+        ZipFile: >
+          var cfr = require('cfn-response');
+          var AWS = require('aws-sdk'); 
+          var iam = new AWS.IAM();
+          var https = require('https');
+          var fs = require('fs');
+          var uuid = require('uuid');
+
+          exports.handler = function(event, context) {
+
+            console.log(event);
+            var resID = event.PhysicalResourceId || uuid();
+            var metadataUrl = event.ResourceProperties.metadataUrl;
+            var idpName = event.ResourceProperties.idpName;
+            var filename = '/tmp/metadata.xml'
+            var file = fs.createWriteStream(filename);
+
+            if (event.RequestType == 'Create' || event.RequestType == 'Update') {
+
+              var request = https.get(metadataUrl, function(response) {
+                response.pipe(file);
+                file.on('finish', function() {
+                  file.close( function () {
+                    let rawdata = fs.readFileSync(filename, 'utf8');  
+                    if (event.RequestType == 'Update') {
+                      var paramslist = {};
+                      iam.listSAMLProviders(paramslist, function(err, data) {
+                        if (err) cfr.send(event, context, cfr.FAILED, err, resID);
+                        else {
+                          var arn='';
+                          for (var provider in data.SAMLProviderList) {
+                            if (data.SAMLProviderList[provider].Arn.split('/')[1] == idpName) {
+                              console.log('Update provider. ' + data.SAMLProviderList[provider].Arn + ' already exists.')
+                              arn = data.SAMLProviderList[provider].Arn;
+                            }
+                          }
+                          if (arn == '') {
+                            var params = { Name: idpName,  SAMLMetadataDocument: rawdata };
+                            iam.createSAMLProvider(params, function(err, data) {
+                              if (err) cfr.send(event, context, cfr.FAILED, err, resID);
+                              else cfr.send(event, context, cfr.SUCCESS, data, resID);
+                            });
+                          } else {
+                            var params = { SAMLProviderArn: arn, SAMLMetadataDocument: rawdata };
+                            iam.updateSAMLProvider(params, function(err, data) {
+                              if (err) cfr.send(event, context, cfr.FAILED, err, resID);
+                              else cfr.send(event, context, cfr.SUCCESS, data, resID);
+                            });
+                          }
+                        }
+                      });
+                    } else {
+                      var params = { Name: idpName, SAMLMetadataDocument: rawdata };
+                      iam.createSAMLProvider(params, function(err, data) {
+                        if (err) cfr.send(event, context, cfr.FAILED, err, resID);
+                        else cfr.send(event, context, cfr.SUCCESS, data, resID);
+                      });
+                    }
+                  });
+                });
+              }).on('error', function(err) {
+                fs.unlink(filename); 
+                cfr.send(event, context, cfr.FAILED, err);
+              });
+            } else if (event.RequestType == 'Delete') {
+
+              var paramslist = {};
+              iam.listSAMLProviders(paramslist, function(err, data) {
+                if (err) cfr.send(event, context, cfr.FAILED, err, resID);
+                else {
+                  var deleteResource = false;
+                  var arn;
+                  console.log(data.SAMLProviderList);
+                  for (var provider in data.SAMLProviderList) {
+                    if (data.SAMLProviderList[provider].Arn.split('/')[1] == idpName) {
+                      console.log('Delete provider. ' + data.SAMLProviderList[provider].Arn + ' already exists.')
+                      deleteResource = true;
+                      arn = data.SAMLProviderList[provider].Arn;
+                    }
+                  }
+                  var params = { SAMLProviderArn: arn };
+                  if (deleteResource == true) {
+                    iam.deleteSAMLProvider(params, function(err, data) {
+                      if (err) cfr.send(event, context, cfr.FAILED, err, resID);
+                      else cfr.send(event, context, cfr.SUCCESS, data, resID);
+                    });
+                  } else {
+                   cfr.send(event, context, cfr.SUCCESS, {success: 'Provider did not exist'}, resID);
+                  }
+                }
+              });
+            } else {
+              cfr.send(event, context, cfr.FAILED, { error: 'Method not supported'}, resID);
+            }
+          };
+      Runtime: "nodejs6.10"
+      Timeout: "30"
+
+  SAMLIdp:
+    Type: Custom::SAMLIdp
+    Properties:
+      ServiceToken: !GetAtt SAMLIdpLambda.Arn
+      metadataUrl: !Ref OktaMetadataUrl
+      idpName: !FindInMap [OktaMapping, "IDPName", "Name"]
+
+  OktaUser:
+    Type: AWS::IAM::User
+    Condition: CreateOktaUser
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F10
+            reason: "No need to create a separate policy"
+          - id: F2000
+            reason: "This user should not belong to any group"
+    Properties:
+      UserName: OktaSSOUser
+      Path: "/"
+      Policies:
+        - PolicyName: OktaMasterAccountPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:GetAccountSummary
+                  - iam:ListRoles
+                  - iam:ListAccountAliases
+                  - iam:GetUser
+                  - sts:AssumeRole
+                  - iam:ListRoles
+                Resource: "*"
