@@ -1,5 +1,5 @@
 #### Put this in a Lambda function that is triggered by a CloudWatch scheduled rule
-#### This will start all EC2 instances with the tag name of AutoStart and a value of yes
+#### This will start all EC2 instances with the tag name of AutoStart and a value of Yes
 #### All tag names and values ARE case sensitive
 
 import boto3
