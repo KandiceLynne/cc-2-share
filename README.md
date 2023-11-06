@@ -11,6 +11,7 @@ WinToolsSetup - Is a nifty PowerShell Script that installs the basics for DevOps
       choco install terraform -y
       choco install azure-cli -y
       choco install awscli -y
+      choco install visualstudiocode -y
 
 
     
