@@ -1,10 +1,7 @@
-# Author - Kandice Hendricks
+## Author - Kandice Hendricks
 ## Version 1.0
-## Date 9/2/2020
+## Date 05/13/2021
 ## This is a very basic PowerShell Script that will do a compare of your input file
-## to the already in use Cidr ranges in your subnets and will create one new subnet using a range 
-## not currently used. This is much easier than using the !CIDR reference as that doesn't always function 
-## easily.
 ## Put this in a Lambda function that is triggered by a CloudWatch scheduled rule
 ## This will start all EC2 instances with the tag name of AutoStop and a value of Yes
 ## All tag names and values ARE case sensitive
