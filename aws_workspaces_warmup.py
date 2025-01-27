@@ -1,3 +1,6 @@
+## Author - Kandice Hendricks
+## Version 1.0
+## Date 05/13/2021
 ### This script starts your workspaces and should be run as a Lambda Function
 ### Lambda trigger is a simple CloudWatch cron rule
 ### IAM rights to run against the workspaces will have to be appropriate for the function
