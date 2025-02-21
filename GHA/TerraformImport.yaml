@@ -1,0 +1,27 @@
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply with Import Automation
+        run: |
+          set +e
+          terraform apply -auto-approve 2>&1 | tee tf_output.log
+          set -e
+
+          missing_resources=$(grep -oP 'resource "\K[^"]+' tf_output.log | sort -u)
+          
+          for resource in $missing_resources; do
+            echo "Importing resource: $resource"
+            terraform import $resource
+          done
+
+          terraform apply -auto-approve
