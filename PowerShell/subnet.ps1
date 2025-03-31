@@ -1,7 +1,7 @@
 ## Author - Kandice Hendricks
 ## Version 1.0
 ## Date 9/2/2021
-## This is a very basic PowerShell Script that will do a compare of your input file
+## This is a very basic AWS PowerShell Script deployment script that will do a compare of your input file (cidr.txt) 
 ## to the already in use Cidr ranges in your subnets and will create one new subnet using a range 
 ## not currently used. This is much easier than using the !CIDR reference as that doesn't always function 
 ## easily.
