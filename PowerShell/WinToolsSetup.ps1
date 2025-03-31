@@ -23,5 +23,6 @@ choco install terraform -y
 choco install azure-cli -y
 choco install awscli -y
 choco install visualstudiocode -y
+choco install python311 -y
 
 Write-Host "Installation complete. Please restart your computer if necessary." -ForegroundColor Green
